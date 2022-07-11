@@ -1,8 +1,14 @@
 #include "preproccesor.h"
 #include "parser.h"
 
-void begin_preprocessor(const char *file_name, char *outfile)
+char* begin_preprocessor(const char *file_name)
 {
+    char* outfile = malloc(strlen(file_name) + 1);
+
+    strcpy(outfile, file_name);
+    strcpy(outfile + strlen(file_name) - 3, ".am");
+    outfile[strlen(file_name)] = '\0';
+
     macro_table = create_table();
 
     fp = fopen(outfile, "w");
@@ -51,7 +57,6 @@ void preprocessor_parse(const char *line, char *line_copy, char *token)
             in_macro = true;
 
             token = strtok(NULL, delim);
-            /* TODO: if (!token) return; */
 
             macro_name = malloc(strlen(token) + 1);
             strcpy(macro_name, token);

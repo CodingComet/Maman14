@@ -1,7 +1,6 @@
 #include "parser.h"
-#include "preproccesor.h"
 
-void parse_line(void (*parse_callback)(const char *line, char *line_copy, char *token), const char *line)
+void parse_line(parse_line_cb parse_callback, const char *line)
 {
     static char line_copy[MAX_LINE_LENGTH];
 
@@ -11,7 +10,7 @@ void parse_line(void (*parse_callback)(const char *line, char *line_copy, char *
     parse_callback(line, line_copy, token);
 }
 
-int process_file(const char *file_name)
+char *parse_file(const char *file_name, char *(*begin_callback)(const char *f), void (*end_callback)(), parse_line_cb parse_callback)
 {
     FILE *fp_in;
     fp_in = fopen(file_name, "r");
@@ -23,18 +22,22 @@ int process_file(const char *file_name)
     }
 
     char line[MAX_LINE_LENGTH];
-    char *outfile = malloc(strlen(file_name) + 1);
-
-    strcpy(outfile, file_name);
-    strcpy(outfile + strlen(file_name) - 3, ".am");
-    outfile[strlen(file_name)] = '\0';
-
-    begin_preprocessor(file_name, outfile);
+    char *res = begin_callback(file_name); /*TODO: assert? res*/
     while (fgets(line, MAX_LINE_LENGTH, fp_in) != NULL)
-        parse_line(preprocessor_parse, line);
-    end_preprocessor();
-
+        parse_line(parse_callback, line);
     fclose(fp_in);
+    end_callback();
+    return res;
+}
+
+int process_file(const char *file_name)
+{
+    char *preprocessor_res, *assembler_res;
+    preprocessor_res = parse_file(file_name, begin_preprocessor, end_preprocessor, preprocessor_parse);
+    assembler_res = parse_file(preprocessor_res, begin_assembler, end_assembler, assembler_parse);
+
+    free(assembler_res);
+    free(preprocessor_res);
 
     return EXIT_SUCCESS;
 }

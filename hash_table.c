@@ -24,6 +24,19 @@ hash_table create_table()
     return table;
 }
 
+hash_table table_from_array(char **values, size_t size)
+{
+    hash_table table = create_table();
+
+    int i = 0;
+    for (; i < TABLE_SIZE; i++)
+        table.table[i] = NULL;
+    for (i = 0; i < size; i++)
+        table_insert(&table, values[i], &i, sizeof(int));
+
+    return table;
+}
+
 void table_insert(hash_table *table, char *key, void *value, size_t size)
 {
     int index = hash(key);
@@ -36,6 +49,7 @@ void table_insert(hash_table *table, char *key, void *value, size_t size)
 
     new_pair->value = malloc(size);
     memcpy(new_pair->value, value, size);
+
 
     if (!table->table[index])
     {

@@ -2,3 +2,8 @@ run.bat
 assembler.o
 assembler.exe
 temp/
+.vscode/
+*.am
+*.ent
+*.ext
+*.ob

@@ -13,8 +13,10 @@ int main(int argc, char *argv[])
         return EXIT_SUCCESS;
     }
 
+    init_assembler();
     for (i = 1; i < argc; i++)
         process_file(argv[i]);
+    terminate_assembler();
 
     return EXIT_SUCCESS;
 }
