@@ -37,15 +37,16 @@ typedef enum
 typedef command_field (*operand_encoder)(char *);
 
 #define BASE 32
-#define MAX_SIZE 2 
+#define MAX_SIZE 2
 
-char * convert_to_base32(unsigned int num) {
+char *convert_to_base32(unsigned int num)
+{
     char arr[BASE] = "!@#$%^&*<>abcdefghijklmnopqrstuv";
-    char * ret = malloc(MAX_SIZE + 1); /* extra room for '\0' */
+    char *ret = malloc(MAX_SIZE + 1); /* extra room for '\0' */
 
     ret[BASE] = '\0';
     ret[0] = arr[(num & 0b1111100000) / BASE]; /* 5 last bits */
-    ret[1] = arr[num & 0b11111]; /* 5 first bits */
+    ret[1] = arr[num & 0b11111];               /* 5 first bits */
 
     return ret;
 }
@@ -75,6 +76,56 @@ unsigned int get_additional_wordc(addressing_mode mode)
     return additional_wordc[mode];
 }
 
+void encode(int type, char *token)
+{
+    switch (type)
+    {
+    case 0: /* .data */
+    {
+        int datav;
+
+        while (token = strtok(NULL, delim))
+        {
+            if ((datav = parse_int(token)) != 0xCAFE)
+            {
+                vector_push_back(&data, datav);
+                DC++;
+                continue;
+            }
+            printf("Data argument is not valid integer!\n");
+            /*ERROR*/
+        }
+        break;
+    }
+    case 1: /* .string */
+    {
+        while (token = strtok(NULL, "\"")) /*TODO: differentiate between seperators in string and out*/
+        {
+            do
+            {
+                vector_push_back(&data, *token);
+                DC++;
+            } while (*(token++));
+        }
+
+        break;
+    }
+    case 2: /* .struct */
+    {
+        /*
+        while (token = strtok(NULL, delim))
+        {
+            if (parse)
+            {
+            }
+        }
+        DC += ;
+        break;
+        */
+    }
+    }
+}
+
 command_field nullary(char *token)
 {
     command_field res = {
@@ -100,7 +151,7 @@ command_field binary(char *token)
 {
     command_field res = {
         .destination_operand = get_addressing_mode(strtok(NULL, delim)),
-        .source_operand = get_addressing_mode(token)};
+        .source_operand = get_addressing_mode(token)}; /* token deallocate */
 
     L = get_additional_wordc(res.destination_operand) + get_additional_wordc(res.source_operand) -
         (res.destination_operand == res.source_operand && res.destination_operand == 2); /* 2 registers in 1 word */
@@ -178,10 +229,6 @@ void init_assembler()
     directive_table = table_from_array(directives, DIRECTIVES);
     register_table = table_from_array(registers, REGISTERS);
     external_symbol_table = create_table();
-
-    /*1.*/ DC = 0;
-    /*2.*/ IC = 0;
-    L = 0;
 }
 
 char *begin_assembler(const char *file_name)
@@ -202,6 +249,10 @@ char *begin_assembler(const char *file_name)
     outfile[strlen(file_name)] = '\0';
     fp_ob = fopen(outfile, "w");
 
+    /*1.*/ DC = 0;
+    /*2.*/ IC = 100;
+    L = 0;
+
     return outfile;
 }
 
@@ -216,26 +267,29 @@ void assembler_parse(const char *line, char *line_copy, char *token)
     pair *p;
     command c;
     symbol symbol;
+    unsigned int i;
     bool symbol_flag = false;
     char symbol_name[MAX_SYMBOL_LENGTH];
     size_t length = strlen(token);
 
-    if (':' == token[length - 1]) /*3.*/
+    if (':' == token[length - 1]) /*3. Check for symbol */
     {
         if (length - 1 > MAX_SYMBOL_LENGTH)
         {
-            printf("Symbol name too long!");
+            printf("Symbol name too long!\n");
             /* ERROR */
         }
 
         symbol_flag = true;
+
+        // Copy data into symbol name
         symbol_name[length - 1] = '\0';
         memcpy(symbol_name, token, length - 1);
     }
 
-    if (symbol_flag)
+    if (symbol_flag) /* Next token */
         token = strtok(NULL, delim);
-    if (p = table_get(&directive_table, token))
+    if (p = table_get(&directive_table, token)) /* 5. - 9. */
     {
         /*
         ".data",
@@ -246,16 +300,13 @@ void assembler_parse(const char *line, char *line_copy, char *token)
         */
         switch (*(int *)p->value)
         {
-        case 0:
-            break; /* .data */
-        case 1:
-            break; /* .string */
-        case 2:
-            break; /* .struct */
         case 3:
             break; /* .entry */
         case 4:
             break; /* .extern */
+        default:
+            encode(*(int *)p->value, token);
+            break;
         }
         return;
     }
@@ -279,14 +330,17 @@ void assembler_parse(const char *line, char *line_copy, char *token)
 
     if (!(p = table_get(&command_table, token)))
     {
-        printf("Command doesn't exist: %s\n");
+        printf("Command doesn't exist: %s\n", token);
         /*ERROR*/
         return;
     }
 
     c.command_binary = parse_command(*(int *)p->value, token);
+    vector_push_back(&commands, c.command_decimal);
+    for (i = 0; i < L; i++) /* Insert additional words as placeholders */
+        vector_push_back(&commands, 0xC0DE);
 
-    IC += L;
+    IC += L; /* Increment instruction count with additional words */
 
     if (symbol_name)
         free(symbol_name);
@@ -294,6 +348,8 @@ void assembler_parse(const char *line, char *line_copy, char *token)
 
 void end_assembler()
 {
+    unsigned int i;
+
     fclose(fp_ob);
     /* TODO: check if used */
 #if 0

@@ -6,7 +6,7 @@
 #include <stdbool.h>
 
 #ifndef VECTOR_DATA_TYPE
-#define VECTOR_DATA_TYPE unsigned
+#define VECTOR_DATA_TYPE int
 #endif
 
 typedef struct

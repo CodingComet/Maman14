@@ -15,7 +15,7 @@ typedef struct
 typedef union
 {
     command_field command_binary;
-    unsigned int command_decimal;
+    int command_decimal;
 } command;
 
 typedef enum
