@@ -21,7 +21,8 @@ typedef union
 typedef enum
 {
     DATA,
-    CODE
+    CODE,
+    EXTERNAL
 } symbol_type;
 
 typedef struct
