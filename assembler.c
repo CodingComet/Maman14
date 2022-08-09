@@ -114,10 +114,10 @@ char *generate_ent(char *file_name, hash_table *entries_symbol_table)
     return ent_file_name;
 }
 
-void generate_ob(char *file_name, vector *data, vector *instructions)
+void generate_ob(char *outfile, vector *data, vector *instructions)
 {
     FILE *ob_file;
-    ob_file = fopen(file_name, "w");
+    ob_file = fopen(outfile, "w");
 
     int i = 0;
     char *p;
@@ -153,7 +153,7 @@ void generate_ob(char *file_name, vector *data, vector *instructions)
 
     fclose(ob_file);
 
-    return file_name;
+    return outfile;
 }
 
 static char *in_file;
@@ -170,8 +170,9 @@ static vector instructions;
 
 static char *outfile;
 
-static unsigned int DC; /*data counter*/
-static unsigned int L;  /*current word counter*/
+static size_t IC = 0 /* instruction counter for second pass */;
+static unsigned int DC; /* data counter */
+static unsigned int L;  /* current word counter */
 
 bool assembler_get_errors()
 {
@@ -180,8 +181,6 @@ bool assembler_get_errors()
 
 addressing_mode get_addressing_mode(const char *token)
 {
-    /* TODO: see table in page 32 */
-
     pair *p;
     char *dot = strchr(token, '.');
 
@@ -306,12 +305,6 @@ command_field parse_command(unsigned int opcode, char *token)
 
     res.opcode = opcode;
     res.ARE = 0;
-
-    /*TODO: ERROR CHECK*/
-
-    /*A is not dependent on memory*/
-    /*R is dependent on local symbol*/
-    /*E is dependent on external symbol*/
 
     return res;
 }
@@ -497,6 +490,97 @@ void end_first_pass()
             s->ptr += instructions.size;
         s->ptr += 100;
     }
+
+    IC = 0;
+}
+
+void parse_operand(char *token, int mode, int IC)
+{
+    pair *p;
+    additional_word w = {.word_decimal = 0};
+
+    switch (mode)
+    {
+    case -1: /* Case for storing two registers in single word */
+        w.word_decimal = instructions.data[IC - 1];
+        w.word_binary.data += atoi(token + 1);
+        instructions.data[IC - 1] = w.word_decimal;
+        L = 0;
+        break;
+
+    case IMMEDIATE:
+        w.word_binary.ARE = ABSOLUTE;
+        w.word_binary.data = atoi(token + 1); /* Get number after # */
+        instructions.data[IC] = w.word_decimal;
+        L = 1;
+
+        break;
+
+    case DIRECT:
+        if (p = table_get(&symbol_table, token)) /* Check if token is a defined symbol */
+        {
+            w.word_binary.ARE = RELOCATABLE;
+            w.word_binary.data = (*(symbol *)p->value).ptr;
+        }
+        else
+        {
+            if (p = table_get(&external_symbol_table, token))                     /* Check if symbol is external */
+                table_insert(&external_symbol_table, token, &IC, sizeof(size_t)); /* Save symbol usage */
+            w.word_binary.ARE = EXTERNAL;
+            w.word_binary.data = 0;
+        }
+
+        instructions.data[IC] = w.word_decimal;
+        L = 1;
+
+        break;
+
+    case INDEXED:
+    {
+        char *dot = strchr(token, '.');
+
+        /* Generate symbol from token with indexed access */
+        char *symbol_name = malloc(dot - token) + 1;
+        symbol_name[dot - token] = 0;
+        memcpy(symbol_name, token, dot - token);
+
+        if (p = table_get(&symbol_table, symbol_name)) /* Check if token is a defined symbol */
+        {
+            w.word_binary.ARE = RELOCATABLE;
+            w.word_binary.data = (*(symbol *)p->value).ptr;
+        }
+        else
+        {
+            if (p = table_get(&external_symbol_table, symbol_name)) /* Check if symbol is external and register usage*/
+                table_insert(&external_symbol_table, symbol_name, &IC, sizeof(size_t));
+            w.word_binary.ARE = EXTERNAL;
+            w.word_binary.data = 0;
+        }
+        free(symbol_name);
+
+        instructions.data[IC] = w.word_decimal;
+
+        /* Index */
+        w.word_binary.ARE = ABSOLUTE;
+        w.word_binary.data = atoi(dot + 1); /* Get number after the dot(S1.1) -> 1 */
+        instructions.data[IC + 1] = w.word_decimal;
+        L = 2;
+
+        break;
+    }
+
+    case REGISTER:
+        w.word_binary.ARE = ABSOLUTE;
+        w.word_binary.data = atoi(token + 1) << 4; /* Set second half of data to register */
+        instructions.data[IC] = w.word_decimal;
+        L = 1;
+
+        break;
+
+    default:
+        L = 0;
+        break;
+    }
 }
 
 void secondary_assembler_parse(const char *line, char *line_copy, char *token)
@@ -506,7 +590,7 @@ void secondary_assembler_parse(const char *line, char *line_copy, char *token)
     if (token[0] == ';')
         return;
 
-    static size_t IC = 0;
+    L = 0;
 
     int i = 0;
     command c;
@@ -515,13 +599,14 @@ void secondary_assembler_parse(const char *line, char *line_copy, char *token)
     operand_encoder oe;
     int length = strlen(token);
 
-    if (IS_SYMBOL(token, length))
+    if (IS_SYMBOL(token, length)) /* If defining a symbol ignore and get next token */
         token = strtok(NULL, delim);
 
-    if (p1 = table_get(&directive_table, token)) /* 5. - 9. */
+    if (p1 = table_get(&directive_table, token)) /* 4. */
     {
         if (*(int *)p1->value != 3)
             return;
+        /* 5. */
         token = strtok(NULL, delim);
         p1 = table_get(&entries, token);
         p2 = table_get(&symbol_table, token);
@@ -538,154 +623,27 @@ void secondary_assembler_parse(const char *line, char *line_copy, char *token)
         /*ERROR*/
         return;
     }
+
+    /* First operand */
     token = strtok(NULL, delim);
 
     c.command_decimal = instructions.data[IC++];
     oe = get_command_parser(c.command_binary.opcode);
-    if (oe != nullary)
+    if (oe == nullary)
+        return;
+
+    if (oe == binary)
     {
-        if (oe == binary)
-        {
-            switch (c.command_binary.source_operand)
-            {
-            case IMMEDIATE:
-                w.word_binary.ARE = ABSOLUTE;
-                w.word_binary.data = atoi(token + 1);
-                instructions.data[IC++] = w.word_decimal;
-                break;
-            case DIRECT:
-                if (p1 = table_get(&symbol_table, token))
-                {
-                    w.word_binary.ARE = RELOCATABLE;
-                    w.word_binary.data = (*(symbol *)p1->value).ptr;
-                }
-                else
-                {
-                    if (p1 = table_get(&external_symbol_table, token)) /* Check if symbol is external and register usage*/
-                        table_insert(&external_symbol_table, token, &IC, sizeof(size_t));
-                    w.word_binary.ARE = EXTERNAL;
-                    w.word_binary.data = 0;
-                }
-
-                instructions.data[IC++] = w.word_decimal;
-                break;
-            case INDEXED:
-            {
-                char *dot = strchr(token, '.');
-
-                /* Generate symbol from token with indexed access */
-                char *symbol_name = malloc(dot - token) + 1;
-                symbol_name[dot - token] = 0;
-                memcpy(symbol_name, token, dot - token);
-
-                if (p1 = table_get(&symbol_table, symbol_name))
-                {
-                    w.word_binary.ARE = RELOCATABLE;
-                    w.word_binary.data = (*(symbol *)p1->value).ptr;
-                }
-                else
-                {
-                    if (p1 = table_get(&external_symbol_table, symbol_name)) /* Check if symbol is external and register usage*/
-                        table_insert(&external_symbol_table, symbol_name, &IC, sizeof(size_t));
-                    w.word_binary.ARE = EXTERNAL;
-                    w.word_binary.data = 0;
-                }
-                free(symbol_name);
-
-                instructions.data[IC++] = w.word_decimal;
-                w.word_binary.ARE = ABSOLUTE;
-                w.word_binary.data = atoi(dot + 1);
-                instructions.data[IC++] = w.word_decimal;
-
-                break;
-            }
-
-            case REGISTER:
-                w.word_binary.ARE = ABSOLUTE;
-                w.word_binary.data = atoi(token + 1) << 4;
-                instructions.data[IC++] = w.word_decimal;
-                break;
-
-            default:
-                break;
-            }
-            token = strtok(NULL, delim);
-        }
-
-        w.word_decimal = 0;
-
-        switch (c.command_binary.destination_operand)
-        {
-        case IMMEDIATE:
-            w.word_binary.ARE = ABSOLUTE;
-            w.word_binary.data = atoi(token + 1);
-            instructions.data[IC++] = w.word_decimal;
-            break;
-        case DIRECT:
-            if (p1 = table_get(&symbol_table, token))
-            {
-                w.word_binary.ARE = RELOCATABLE;
-                w.word_binary.data = (*(symbol *)p1->value).ptr;
-            }
-            else
-            {
-                if (p1 = table_get(&external_symbol_table, token)) /* Check if symbol is external and register usage*/
-                    table_insert(&external_symbol_table, token, &IC, sizeof(size_t));
-                w.word_binary.ARE = EXTERNAL;
-                w.word_binary.data = 0;
-            }
-
-            instructions.data[IC++] = w.word_decimal;
-            break;
-        case INDEXED:
-        {
-            char *dot = strchr(token, '.');
-
-            /* Generate symbol from token with indexed access */
-            char *symbol_name = malloc(dot - token) + 1;
-            symbol_name[dot - token] = 0;
-            memcpy(symbol_name, token, dot - token);
-
-            if (p1 = table_get(&symbol_table, symbol_name))
-            {
-                w.word_binary.ARE = RELOCATABLE;
-                w.word_binary.data = (*(symbol *)p1->value).ptr;
-            }
-            else
-            {
-                if (p1 = table_get(&external_symbol_table, symbol_name)) /* Check if symbol is external and register usage*/
-                    table_insert(&external_symbol_table, symbol_name, &IC, sizeof(size_t));
-                w.word_binary.ARE = EXTERNAL;
-                w.word_binary.data = 0;
-            }
-            free(symbol_name);
-
-            IC++;
-            w.word_binary.ARE = ABSOLUTE;
-            w.word_binary.data = atoi(dot + 1);
-            instructions.data[IC++] = w.word_decimal;
-
-            break;
-        }
-        case REGISTER:
-
-            w.word_binary.ARE = ABSOLUTE;
-            if (c.command_binary.destination_operand == c.command_binary.source_operand && c.command_binary.destination_operand == REGISTER)
-            {
-                w.word_decimal = instructions.data[IC - 1];
-                w.word_binary.data += atoi(token + 1);
-                instructions.data[IC - 1] = w.word_decimal;
-            }
-            else
-            {
-                w.word_binary.data = atoi(token + 1);
-                instructions.data[IC++] = w.word_decimal;
-            }
-            break;
-        default:
-            break;
-        }
+        parse_operand(token, c.command_binary.source_operand, IC);
+        token = strtok(NULL, delim);
     }
+
+    IC += L; /* Increment IC by additional line count (0 in case of unary) */
+    if (c.command_binary.source_operand == REGISTER && c.command_binary.destination_operand == REGISTER)
+        parse_operand(token, -1, IC); /* for -1 see parse_operand */
+    else
+        parse_operand(token, c.command_binary.destination_operand, IC);
+    IC += L; /* Increment IC by additional line count of destination operand */
 }
 
 void end_assembler()
@@ -694,41 +652,11 @@ void end_assembler()
     pair *p1, *p2;
     unsigned i = 0;
 
-    /*
-    for (i = 0; i < instructions.size; i++)
-    {
-        char *b32 = convert_to_base32(instructions.data[i]);
-        printf("Code: %s\n", b32);
-        fflush(stdout);
-        free(b32);
-    }
-
-
-    for (i = 0; i < data.size; i++)
-    {
-        char *b32 = convert_to_base32(data.data[i]);
-        printf("Code: %s\n", b32);
-        fflush(stdout);
-        free(b32);
-    }
-    */
-
     free(generate_ent(in_file, &entries));
     free(generate_ext(in_file, &external_symbol_table));
     if (!assembler_get_errors())
         generate_ob(outfile, &data, &instructions);
 
-        /* TODO: check if used */
-#if 0
-    fclose(fp_ent);
-    fclose(fp_ext);
-#endif
-
-#if 1 /* TODO: if there are errrors */
-    return;
-#else
-        /* step 17, 18 */
-#endif
     free_vector(&data);
     free_vector(&instructions);
 

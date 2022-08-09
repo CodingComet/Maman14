@@ -37,6 +37,7 @@ int process_file(const char *file_name)
     char *preprocessor_res, *assembler_res;
     preprocessor_res = parse_file(file_name, begin_preprocessor, end_preprocessor, preprocessor_parse);
     assembler_res = parse_file(preprocessor_res, begin_assembler, end_first_pass, assembler_parse);
+    
     if (!assembler_get_errors())
         parse_file(preprocessor_res, nullptr, end_assembler, secondary_assembler_parse);
 

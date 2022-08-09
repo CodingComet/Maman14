@@ -1,6 +1,4 @@
-#ifndef VECTOR_H
-#define VECTOR_H
-
+#pragma once
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -20,5 +18,3 @@ vector create_vector(size_t initial_capacity);
 bool realloc_vector(vector *v, size_t new_capacity);
 bool vector_push_back(vector *v, VECTOR_DATA_TYPE value);
 void free_vector(vector *v);
-
-#endif
