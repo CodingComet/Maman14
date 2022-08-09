@@ -17,6 +17,7 @@ int main(int argc, char *argv[])
     for (i = 1; i < argc; i++)
         process_file(argv[i]);
     terminate_assembler();
+    fflush(stdout);
 
     return EXIT_SUCCESS;
 }

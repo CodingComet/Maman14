@@ -23,18 +23,22 @@ char *parse_file(const char *file_name, char *(*begin_callback)(const char *f), 
 
     char line[MAX_LINE_LENGTH];
     char *res = begin_callback(file_name); /*TODO: assert? res*/
-    while (fgets(line, MAX_LINE_LENGTH, fp_in) != NULL)
+    while (fgets(line, MAX_LINE_LENGTH, fp_in))
         parse_line(parse_callback, line);
-    fclose(fp_in);
     end_callback();
+    fclose(fp_in);
     return res;
 }
+
+void nullptr() {}
 
 int process_file(const char *file_name)
 {
     char *preprocessor_res, *assembler_res;
     preprocessor_res = parse_file(file_name, begin_preprocessor, end_preprocessor, preprocessor_parse);
-    assembler_res = parse_file(preprocessor_res, begin_assembler, end_assembler, assembler_parse);
+    assembler_res = parse_file(preprocessor_res, begin_assembler, end_first_pass, assembler_parse);
+    if (!assembler_get_errors())
+        parse_file(preprocessor_res, nullptr, end_assembler, secondary_assembler_parse);
 
     free(assembler_res);
     free(preprocessor_res);

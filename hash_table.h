@@ -13,6 +13,7 @@ typedef struct
 
 typedef struct
 {
+    int size;
     pair *table[TABLE_SIZE];
 } hash_table;
 

@@ -16,6 +16,7 @@ unsigned int hash(char *key)
 hash_table create_table()
 {
     hash_table table;
+    table.size = 0;
 
     int i = 0;
     for (; i < TABLE_SIZE; i++)
@@ -61,6 +62,8 @@ void table_insert(hash_table *table, char *key, void *value, size_t size)
         new_pair->next = table->table[index];
         table->table[index] = new_pair;
     }
+
+    table->size++;
 }
 
 pair *table_get(hash_table *table, char *key)
