@@ -2,7 +2,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
-#include "hash_table.h"
 
 typedef enum
 {
@@ -28,15 +27,15 @@ typedef enum
 
 typedef struct
 {
-    ARE ARE : 2;
-    addressing_mode destination_operand : 2;
-    addressing_mode source_operand : 2;
+    int ARE : 2;
+    int destination_operand : 2;
+    int source_operand : 2;
     unsigned opcode : 4;
 } command_field;
 
 typedef struct
 {
-    ARE ARE : 2;
+    int ARE : 2;
     int data : 8;
 } additional_word_field;
 

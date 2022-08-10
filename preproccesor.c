@@ -1,14 +1,14 @@
-#include "preproccesor.h"
 #include "parser.h"
+#include "preproccesor.h"
 
-char* begin_preprocessor(const char *file_name)
+static FILE *fp = NULL;
+static hash_table macro_table;
+
+static char *outfile;
+
+char *begin_preprocessor(const char *file_name)
 {
-    char* outfile = malloc(strlen(file_name) + 1);
-
-    strcpy(outfile, file_name);
-    strcpy(outfile + strlen(file_name) - 3, ".am");
-    outfile[strlen(file_name)] = '\0';
-
+    outfile = replace_file_extension(file_name, "am");
     macro_table = create_table();
 
     fp = fopen(outfile, "w");
@@ -26,6 +26,7 @@ void preprocessor_parse(const char *line, char *line_copy, char *token)
     {
         if (token && 0 == strcmp(token, "endmacro"))
         {
+            /* Insert macro body into marco table. */
             in_macro = false;
             table_insert(&macro_table, macro_name, macro_body, strlen(macro_body) + 1);
 
@@ -36,10 +37,11 @@ void preprocessor_parse(const char *line, char *line_copy, char *token)
             return;
         }
 
+        /* Insert line into macro. */
         int len = strlen(macro_body);
         int line_len = strlen(line);
         int new_len = len + line_len + 1;
-        macro_body = realloc(macro_body, new_len);
+        macro_body = realloc(macro_body, new_len); /* Realloc macro body. */
         strcat(macro_body + len, line);
         macro_body[new_len - 1] = '\0';
         return;
@@ -52,7 +54,7 @@ void preprocessor_parse(const char *line, char *line_copy, char *token)
             fwrite(p->value, 1, strlen(p->value), fp);
             return;
         }
-        if (0 == strcmp(token, "macro"))
+        if (0 == strcmp(token, "macro")) /* Start macro */
         {
             in_macro = true;
 
@@ -71,6 +73,7 @@ void preprocessor_parse(const char *line, char *line_copy, char *token)
 
 void end_preprocessor()
 {
+    printf("Generated file %s.\n", outfile);
     fclose(fp);
     free_table(&macro_table);
 }

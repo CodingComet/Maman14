@@ -1,6 +1,5 @@
 #include "vector.h"
 
-
 vector create_vector(size_t initial_capacity)
 {
     vector v;

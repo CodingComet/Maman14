@@ -1,63 +1,97 @@
 #include "parser.h"
+#include "vector.h"
 #include "assembler.h"
 #include "hash_table.h"
-#include "vector.h"
 
 #define COMMANDS 16
 #define REGISTERS 8
 #define DIRECTIVES 5
 
-#define MAX_SYMBOL_LENGTH 30
-
 #define BASE 32
 #define MAX_SIZE 2
+
+#define MEMORY_START 100
+#define MAX_SYMBOL_LENGTH 30
 
 #define IS_SYMBOL(token, length) ':' == token[length - 1]
 
 char *convert_to_base32(unsigned int num)
 {
     char arr[BASE] = "!@#$%^&*<>abcdefghijklmnopqrstuv";
-    char *ret = malloc(MAX_SIZE + 1); /* extra room for '\0' */
+    char *ret = malloc(MAX_SIZE + 1); /* extra room for '\0'. */
 
     ret[MAX_SIZE] = 0;
-    ret[0] = arr[(num & 0b1111100000) / BASE]; /* 5 last bits */
-    ret[1] = arr[num & 0b11111];               /* 5 first bits */
+    ret[0] = arr[(num & 0b1111100000) / BASE]; /* 5 last bits. */
+    ret[1] = arr[num & 0b11111];               /* 5 first bits. */
 
     return ret;
 }
 
-char *generate_ext(char *file_name, hash_table *external_symbol_table)
-{
+/* Global state: */
+static char *in_file;
 
-    if (1 > external_symbol_table->size)
+static hash_table symbol_table;
+static hash_table command_table;
+static hash_table register_table;
+static hash_table directive_table;
+static hash_table externs;
+static hash_table entries;
+
+static vector data;
+static vector instructions;
+
+static char *outfile;
+
+static size_t L;  /* current word counter. */
+static size_t DC; /* data counter. */
+static size_t LC; /* line counter for error tracking. */
+static size_t IC; /* instruction counter for second pass. */
+static bool HAS_ERRORS;
+
+void raise(char *msg) /* Set error flag and output to stderr. */
+{
+    HAS_ERRORS = true;
+    fprintf(stderr, "In line %d ERROR: %s!\n", LC, msg);
+}
+
+char *generate_ext(char *file_name)
+{
+    if (1 > externs.size)
         return NULL;
-    /* creating the .ext file */
-    char *ext_file_name = malloc(strlen(file_name) + 2);
-    memcpy(ext_file_name, file_name, strlen(file_name) - 3);
-    memcpy(ext_file_name + strlen(file_name) - 3, ".ext", 4);
-    ext_file_name[strlen(file_name) + 1] = '\0';
+
+    /* Replace file extension. */
+    char *ext_file_name = replace_file_extension(file_name, "ext");
+
+    /* Creating the .ext file. */
     FILE *ext_file;
-    ext_file = fopen(ext_file_name, "w");
+    if (!(ext_file = fopen(ext_file_name, "w")))
+    {
+        raise("Can't open .ext file.\n");
+        return NULL;
+    }
     int i = 0;
     pair *p;
     for (; i < TABLE_SIZE; i++)
     {
-        p = external_symbol_table->table[i];
+        p = externs.table[i];
         while (p)
         {
             int addr_dec = *(int *)p->value;
 
-            if (addr_dec == 0xdeadbeef)
+            if (addr_dec == 0xdeadbeef) /* Hexadecimal place holder. */
             {
                 p = p->next;
                 continue;
             }
-            char *addr_b32 = convert_to_base32(addr_dec + 100);
-            char *line = malloc(strlen(p->key) + 4);
+            char *addr_b32 = convert_to_base32(addr_dec + MEMORY_START);
+            char *line = malloc(strlen(p->key) + 4); /* Allocate line for address, and token. */
+
+            /* Construct line. */
             memcpy(line, p->key, strlen(p->key));
-            line[strlen(p->key)] = ' ';
+            line[strlen(p->key)] = '\t';
             memcpy(line + strlen(p->key) + 1, addr_b32, 3);
             line[strlen(p->key) + 3] = '\0';
+
             fputs(line, ext_file);
             fputc('\n', ext_file);
             free(line);
@@ -66,32 +100,28 @@ char *generate_ext(char *file_name, hash_table *external_symbol_table)
         }
     }
     fclose(ext_file);
-    free(ext_file_name);
     return ext_file_name;
 }
 
-char *generate_ent(char *file_name, hash_table *entries_symbol_table)
+char *generate_ent(char *file_name)
 {
-
-    if (1 > entries_symbol_table->size)
+    if (1 > entries.size)
         return NULL;
-    /* creating the .ent file */
 
-    char *ent_file_name = malloc(strlen(file_name) + 2);
-    memcpy(ent_file_name, file_name, strlen(file_name) - 3);
-    memcpy(ent_file_name + strlen(file_name) - 3, ".ent", 4);
-    ent_file_name[strlen(file_name) + 1] = '\0';
+    /* Creating the .ent file. */
+    char *ent_file_name = replace_file_extension(file_name, "ent");
 
     FILE *ent_file;
 
     if (!(ent_file = fopen(ent_file_name, "w")))
     {
-        printf("Error opening file %s\n", file_name);
+        raise("Can't open .ent file\n");
+        return NULL;
     }
     int i = 0;
     for (; i < TABLE_SIZE; i++)
     {
-        pair *p = entries_symbol_table->table[i];
+        pair *p = entries.table[i];
         while (p)
         {
             int addr_dec = *(int *)p->value;
@@ -104,29 +134,35 @@ char *generate_ent(char *file_name, hash_table *entries_symbol_table)
             line[strlen(p->key) + 3] = '\0';
             fputs(line, ent_file);
             fputc('\n', ent_file);
+
             free(line);
             free(addr_b32);
             p = p->next;
         }
     }
     fclose(ent_file);
-    free(ent_file_name);
     return ent_file_name;
 }
 
-void generate_ob(char *outfile, vector *data, vector *instructions)
+void generate_ob(char *outfile)
 {
     FILE *ob_file;
     ob_file = fopen(outfile, "w");
+    if (!ob_file)
+    {
+        raise("Can't open .ob file");
+        return;
+    }
 
     int i = 0;
     char *p;
     char *address;
 
-    for (; i < instructions->size; i++)
+    /* Write instructions to output file. */
+    for (; i < instructions.size; i++)
     {
-        p = convert_to_base32(instructions->data[i]);
-        address = convert_to_base32(i + 100);
+        p = convert_to_base32(instructions.data[i]);
+        address = convert_to_base32(i + MEMORY_START);
 
         fputs(address, ob_file);
         fputc('\t', ob_file);
@@ -137,10 +173,11 @@ void generate_ob(char *outfile, vector *data, vector *instructions)
         free(address);
     }
 
-    for (i = 0; i < data->size; i++)
+    /* Write data to output file. */
+    for (i = 0; i < data.size; i++)
     {
-        p = convert_to_base32(data->data[i]);
-        address = convert_to_base32(i + 100 + instructions->size);
+        p = convert_to_base32(data.data[i]);
+        address = convert_to_base32(i + MEMORY_START + instructions.size);
 
         fputs(address, ob_file);
         fputc('\t', ob_file);
@@ -156,27 +193,9 @@ void generate_ob(char *outfile, vector *data, vector *instructions)
     return outfile;
 }
 
-static char *in_file;
-
-static hash_table symbol_table;
-static hash_table command_table;
-static hash_table register_table;
-static hash_table directive_table;
-static hash_table external_symbol_table;
-static hash_table entries;
-
-static vector data;
-static vector instructions;
-
-static char *outfile;
-
-static size_t IC = 0 /* instruction counter for second pass */;
-static unsigned int DC; /* data counter */
-static unsigned int L;  /* current word counter */
-
 bool assembler_get_errors()
 {
-    return false;
+    return HAS_ERRORS;
 }
 
 addressing_mode get_addressing_mode(const char *token)
@@ -197,21 +216,25 @@ unsigned int get_additional_wordc(addressing_mode mode)
 {
     unsigned int additional_wordc[] = {
         1, 1, 2, 1};
+    /*
+    Additional word counts:
+    IMMEDIATE - 1,
+    DIRECT - 1,
+    INDEXED - 1,
+    REGISTER - 2.
+    */
 
     return additional_wordc[mode];
 }
 
 command_field nullary(char *token)
 {
-    command_field res = {
-        .source_operand = 0,
-        .destination_operand = 0};
-    L = 0;
+    command res = {.command_decimal = 0};
 
-    return res;
+    return res.command_binary;
 }
 
-command_field unary(char *token)
+command_field unary(char *token) /* Destination operand only. */
 {
     command_field res = {
         .destination_operand = get_addressing_mode(token)};
@@ -221,14 +244,14 @@ command_field unary(char *token)
     return res;
 }
 
-command_field binary(char *token)
+command_field binary(char *token) /* Both operands. */
 {
     command_field res = {
         .destination_operand = get_addressing_mode(strtok(NULL, delim)),
-        .source_operand = get_addressing_mode(token)}; /* token deallocate */
+        .source_operand = get_addressing_mode(token)};
 
     L = get_additional_wordc(res.destination_operand) + get_additional_wordc(res.source_operand) -
-        (res.destination_operand == res.source_operand && res.destination_operand == REGISTER); /* 2 registers in 1 word */
+        (res.destination_operand == res.source_operand && res.destination_operand == REGISTER); /* 2 registers in 1 word. */
 
     return res;
 }
@@ -239,29 +262,29 @@ void encode_string(char *token)
     token = strtok(NULL, "");
     bool inString = false;
 
-    for (; i < strlen(token); i++)
+    for (; i < strlen(token); i++) /* Iterate over string. */
     {
-        if (token[i] == '"')
+        if (token[i] == '"') /* String between "". */
         {
             if (inString)
                 break;
 
-            inString = true;
+            inString = true; /* Begin string. */
             continue;
         }
         if (inString)
         {
-            vector_push_back(&data, token[i]);
+            vector_push_back(&data, token[i]); /* Push character to data. */
             ++DC;
         }
     }
-    vector_push_back(&data, 0);
+    vector_push_back(&data, 0); /* Null terminated string. */
     ++DC;
 }
 
 void encode_data(char *token)
 {
-    vector_push_back(&data, atoi(token));
+    vector_push_back(&data, atoi(token)); /* Push parsed token(integer) to data. */
     ++DC;
 }
 
@@ -270,11 +293,9 @@ void encode(datatype type, char *token)
     switch (type)
     {
     case INT:
+        /* List of integers. */
         while (token = strtok(NULL, delim))
-        {
             encode_data(token);
-        }
-
         break;
 
     case STRING:
@@ -282,6 +303,7 @@ void encode(datatype type, char *token)
         break;
 
     case STRUCT:
+        /* data, string. */
         token = strtok(NULL, delim);
         encode_data(token);
         encode_string(token);
@@ -291,11 +313,11 @@ void encode(datatype type, char *token)
 
 operand_encoder get_command_parser(unsigned int command)
 {
-    if (command <= 4)
+    if (command <= 4) /* mov-lea. */
         return binary;
-    if (command <= 13)
+    if (command <= 13) /* not-jsr. */
         return unary;
-    return nullary;
+    return nullary; /* rts, hlt. */
 }
 
 command_field parse_command(unsigned int opcode, char *token)
@@ -304,14 +326,13 @@ command_field parse_command(unsigned int opcode, char *token)
     command_field res = get_command_parser(opcode)(token);
 
     res.opcode = opcode;
-    res.ARE = 0;
+    res.ARE = ABSOLUTE; /* ABSOLUTE for commands. */
 
     return res;
 }
 
 void init_assembler()
 {
-    int i;
     char *commands[COMMANDS] = {
         "mov",
         "cmp",
@@ -347,6 +368,7 @@ void init_assembler()
         "r6",
         "r7"};
 
+    /* Storing keywords for parsing */
     command_table = table_from_array(commands, COMMANDS);
     directive_table = table_from_array(directives, DIRECTIVES);
     register_table = table_from_array(registers, REGISTERS);
@@ -356,30 +378,26 @@ char *begin_assembler(const char *file_name)
 {
     in_file = file_name;
 
-    outfile = malloc(strlen(file_name) + 2);
-    outfile[strlen(file_name) + 1] = '\0';
+    /* Store(and return) output file name. */
+    outfile = replace_file_extension(file_name, "ob");
 
-    strcpy(outfile, file_name);
+    /* 1. */ DC = 0;
+    HAS_ERRORS = false;
 
-    strcpy(outfile + strlen(file_name) - 3, ".ob");
-    outfile[strlen(file_name)] = '\0';
-
-    /*1.*/ DC = 0;
-    L = 0;
-
+    /* Initialize assembler data collectors. */
     data = create_vector(2);
     instructions = create_vector(2);
 
     entries = create_table();
     symbol_table = create_table();
-    external_symbol_table = create_table();
+    externs = create_table();
 
     return outfile;
 }
 
 void assembler_parse(const char *line, char *line_copy, char *token)
 {
-    if (token == NULL) /* empty */
+    if (token == NULL) /* Empty. */
         return;
     if (token[0] == ';')
         return;
@@ -388,37 +406,27 @@ void assembler_parse(const char *line, char *line_copy, char *token)
     pair *p;
     symbol s;
     command c;
-    unsigned int i = 0xdeadbeef;
+    unsigned int i = 0xdeadbeef; /* Place holder for addresses. */
     bool symbol_flag = false;
     char symbol_name[MAX_SYMBOL_LENGTH];
     size_t length = strlen(token);
 
-    if (IS_SYMBOL(token, length)) /*3. Check for symbol */
+    if (IS_SYMBOL(token, length)) /* 3. */
     {
         if (length - 1 > MAX_SYMBOL_LENGTH)
-        {
-            printf("Symbol name too long!\n");
-            /* ERROR */
-        }
+            raise("Symbol name too long");
 
         symbol_flag = true;
 
-        /* Copy data into symbol name */
+        /* Copy data into symbol name. */
         symbol_name[length - 1] = '\0';
         memcpy(symbol_name, token, length - 1);
     }
 
-    if (symbol_flag) /* Next token */
+    if (symbol_flag) /* Next token. */
         token = strtok(NULL, delim);
     if (p = table_get(&directive_table, token)) /* 5. - 9. */
     {
-        /*
-        ".data",
-        ".string",
-        ".struct",
-        ".entry",
-        ".extern"
-        */
         switch (*(int *)p->value)
         {
         case 3:
@@ -427,9 +435,9 @@ void assembler_parse(const char *line, char *line_copy, char *token)
             break; /* .entry */
         case 4:
             token = strtok(NULL, delim);
-            table_insert(&external_symbol_table, token, &i, sizeof(int));
+            table_insert(&externs, token, &i, sizeof(int));
             break; /* .extern */
-        default:
+        default:   /* .data, .string, .struct */
             s.ptr = DC;
             s.type = DATA;
             table_insert(&symbol_table, symbol_name, &s, sizeof(s));
@@ -450,25 +458,21 @@ void assembler_parse(const char *line, char *line_copy, char *token)
                 table_insert(&symbol_table, symbol_name, &s, sizeof(s));
             }
             else
-            {
-                printf("Symbol already defined: %s\n", line);
-                /*ERROR*/
-            }
+                raise("Symbol already defined");
         }
     }
 
     if (!(p = table_get(&command_table, token)))
     {
-        printf("Command doesn't exist: %s\n", token);
-        /*ERROR*/
+        raise("Command doesn't exist");
         return;
     }
 
     c.command_binary = parse_command(*(int *)p->value, token);
 
     vector_push_back(&instructions, c.command_decimal);
-    for (i = 0; i < L; i++) /* Insert additional words as placeholders */
-        vector_push_back(&instructions, 0xC0DE);
+    for (i = 0; i < L; i++)                      /* Insert additional words as placeholders. */
+        vector_push_back(&instructions, 0xC0DE); /* 0xC0DE is hexadecimal placeholder for operands.*/
 
     if (symbol_name)
         free(symbol_name);
@@ -487,8 +491,8 @@ void end_first_pass()
         s = p->value;
 
         if (s->type == DATA)
-            s->ptr += instructions.size;
-        s->ptr += 100;
+            s->ptr += instructions.size; /* 17. */
+        s->ptr += MEMORY_START;          /* Start memory at 100. */
     }
 
     IC = 0;
@@ -501,7 +505,7 @@ void parse_operand(char *token, int mode, int IC)
 
     switch (mode)
     {
-    case -1: /* Case for storing two registers in single word */
+    case -1: /* Case for storing two registers in single word. */
         w.word_decimal = instructions.data[IC - 1];
         w.word_binary.data += atoi(token + 1);
         instructions.data[IC - 1] = w.word_decimal;
@@ -510,22 +514,22 @@ void parse_operand(char *token, int mode, int IC)
 
     case IMMEDIATE:
         w.word_binary.ARE = ABSOLUTE;
-        w.word_binary.data = atoi(token + 1); /* Get number after # */
+        w.word_binary.data = atoi(token + 1); /* Get number after #. */
         instructions.data[IC] = w.word_decimal;
         L = 1;
 
         break;
 
     case DIRECT:
-        if (p = table_get(&symbol_table, token)) /* Check if token is a defined symbol */
+        if (p = table_get(&symbol_table, token)) /* Check if token is a defined symbol. */
         {
             w.word_binary.ARE = RELOCATABLE;
             w.word_binary.data = (*(symbol *)p->value).ptr;
         }
         else
         {
-            if (p = table_get(&external_symbol_table, token))                     /* Check if symbol is external */
-                table_insert(&external_symbol_table, token, &IC, sizeof(size_t)); /* Save symbol usage */
+            if (p = table_get(&externs, token))                     /* Check if symbol is external. */
+                table_insert(&externs, token, &IC, sizeof(size_t)); /* Save symbol usage. */
             w.word_binary.ARE = EXTERNAL;
             w.word_binary.data = 0;
         }
@@ -539,20 +543,20 @@ void parse_operand(char *token, int mode, int IC)
     {
         char *dot = strchr(token, '.');
 
-        /* Generate symbol from token with indexed access */
+        /* Generate symbol from token with indexed access. */
         char *symbol_name = malloc(dot - token) + 1;
         symbol_name[dot - token] = 0;
         memcpy(symbol_name, token, dot - token);
 
-        if (p = table_get(&symbol_table, symbol_name)) /* Check if token is a defined symbol */
+        if (p = table_get(&symbol_table, symbol_name)) /* Check if token is a defined symbol. */
         {
             w.word_binary.ARE = RELOCATABLE;
             w.word_binary.data = (*(symbol *)p->value).ptr;
         }
         else
         {
-            if (p = table_get(&external_symbol_table, symbol_name)) /* Check if symbol is external and register usage*/
-                table_insert(&external_symbol_table, symbol_name, &IC, sizeof(size_t));
+            if (p = table_get(&externs, symbol_name)) /* Check if symbol is external and save usage. */
+                table_insert(&externs, symbol_name, &IC, sizeof(size_t));
             w.word_binary.ARE = EXTERNAL;
             w.word_binary.data = 0;
         }
@@ -562,7 +566,7 @@ void parse_operand(char *token, int mode, int IC)
 
         /* Index */
         w.word_binary.ARE = ABSOLUTE;
-        w.word_binary.data = atoi(dot + 1); /* Get number after the dot(S1.1) -> 1 */
+        w.word_binary.data = atoi(dot + 1); /* Get number after the dot(S1.1) -> 1. */
         instructions.data[IC + 1] = w.word_decimal;
         L = 2;
 
@@ -571,7 +575,7 @@ void parse_operand(char *token, int mode, int IC)
 
     case REGISTER:
         w.word_binary.ARE = ABSOLUTE;
-        w.word_binary.data = atoi(token + 1) << 4; /* Set second half of data to register */
+        w.word_binary.data = atoi(token + 1) << 4; /* Set second half of data to register. */
         instructions.data[IC] = w.word_decimal;
         L = 1;
 
@@ -583,6 +587,7 @@ void parse_operand(char *token, int mode, int IC)
     }
 }
 
+/* Pass no. 2 */
 void secondary_assembler_parse(const char *line, char *line_copy, char *token)
 {
     if (token == NULL) /* empty */
@@ -599,7 +604,7 @@ void secondary_assembler_parse(const char *line, char *line_copy, char *token)
     operand_encoder oe;
     int length = strlen(token);
 
-    if (IS_SYMBOL(token, length)) /* If defining a symbol ignore and get next token */
+    if (IS_SYMBOL(token, length)) /* If defining a symbol ignore and get next token. */
         token = strtok(NULL, delim);
 
     if (p1 = table_get(&directive_table, token)) /* 4. */
@@ -617,12 +622,7 @@ void secondary_assembler_parse(const char *line, char *line_copy, char *token)
         return;
     }
 
-    if (!(p1 = table_get(&command_table, token)))
-    {
-        printf("Command doesn't exist: %s\n", token);
-        /*ERROR*/
-        return;
-    }
+    p1 = table_get(&command_table, token);
 
     /* First operand */
     token = strtok(NULL, delim);
@@ -638,31 +638,39 @@ void secondary_assembler_parse(const char *line, char *line_copy, char *token)
         token = strtok(NULL, delim);
     }
 
-    IC += L; /* Increment IC by additional line count (0 in case of unary) */
+    IC += L; /* Increment IC by additional line count (0 in case of unary). */
     if (c.command_binary.source_operand == REGISTER && c.command_binary.destination_operand == REGISTER)
-        parse_operand(token, -1, IC); /* for -1 see parse_operand */
+        parse_operand(token, -1, IC); /* for -1 see parse_operand(). */
     else
         parse_operand(token, c.command_binary.destination_operand, IC);
-    IC += L; /* Increment IC by additional line count of destination operand */
+    IC += L; /* Increment IC by additional line count of destination operand. */
 }
 
 void end_assembler()
 {
-    symbol *s;
-    pair *p1, *p2;
-    unsigned i = 0;
-
-    free(generate_ent(in_file, &entries));
-    free(generate_ext(in_file, &external_symbol_table));
     if (!assembler_get_errors())
-        generate_ob(outfile, &data, &instructions);
+    {
+        char *ent_file = generate_ent(in_file);
+        char *ext_file = generate_ext(in_file);
+
+        generate_ob(outfile);
+        printf("Generated file %s.\n", outfile);
+
+        if (ent_file)
+            printf("Generated file %s.\n", ent_file);
+        if (ext_file)
+            printf("Generated file %s.\n", ext_file);
+
+        free(ent_file);
+        free(ext_file);
+    }
 
     free_vector(&data);
     free_vector(&instructions);
 
     free_table(&entries);
     free_table(&symbol_table);
-    free_table(&external_symbol_table);
+    free_table(&externs);
 }
 
 void terminate_assembler()

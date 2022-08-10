@@ -18,7 +18,7 @@ char *parse_file(const char *file_name, char *(*begin_callback)(const char *f), 
     if (!fp_in)
     {
         printf("Error opening file %s\n", file_name);
-        return EXIT_FAILURE;
+        return NULL;
     }
 
     char line[MAX_LINE_LENGTH];
@@ -35,14 +35,32 @@ void nullptr() {}
 int process_file(const char *file_name)
 {
     char *preprocessor_res, *assembler_res;
-    preprocessor_res = parse_file(file_name, begin_preprocessor, end_preprocessor, preprocessor_parse);
-    assembler_res = parse_file(preprocessor_res, begin_assembler, end_first_pass, assembler_parse);
-    
+
+    if (!(preprocessor_res = parse_file(file_name, begin_preprocessor, end_preprocessor, preprocessor_parse)))
+        return EXIT_FAILURE;
+    if (!(assembler_res = parse_file(preprocessor_res, begin_assembler, end_first_pass, assembler_parse)))
+        return EXIT_FAILURE;
+
     if (!assembler_get_errors())
         parse_file(preprocessor_res, nullptr, end_assembler, secondary_assembler_parse);
+    else
+        end_assembler();
 
     free(assembler_res);
     free(preprocessor_res);
 
-    return EXIT_SUCCESS;
+    return assembler_get_errors();
+}
+
+char *replace_file_extension(char *file_name, char *extension)
+{
+    char *dot = strrchr(file_name, '.');
+    int length = dot - file_name;
+    char *res = malloc(length + 1 + strlen(extension) + 1);
+    res[length + 1 + strlen(extension)] = 0;
+    memcpy(res, file_name, length);
+    strcpy(res + length + 1, extension);
+    res[length] = '.';
+
+    return res;
 }

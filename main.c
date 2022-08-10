@@ -15,7 +15,15 @@ int main(int argc, char *argv[])
 
     init_assembler();
     for (i = 1; i < argc; i++)
-        process_file(argv[i]);
+    {
+        printf("=====================================\n");
+        printf("Processing file %s, %d\\%d...\n", argv[i], i, argc - 1);
+        if (!process_file(argv[i]))
+            continue;
+
+        printf("Failed to assemble file %s, See more in stderr.\n", argv[i]);
+    }
+    printf("=====================================\n");
     terminate_assembler();
     fflush(stdout);
 
