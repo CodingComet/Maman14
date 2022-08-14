@@ -6,7 +6,7 @@
 int main(int argc, char *argv[])
 {
     int i;
-    char boundary[] = "===";
+    char log_row_separator[] = "===";
 
     if (argc < 2)
     {
@@ -17,14 +17,14 @@ int main(int argc, char *argv[])
     init_assembler();
     for (i = 1; i < argc; i++)
     {
-        printf("%s\n", boundary);
+        printf("%s\n", log_row_separator);
         printf("Processing file %s, %d\\%d...\n", argv[i], i, argc - 1);
         if (!process_file(argv[i]))
             continue;
 
         printf("Failed to assemble file %s, See more in stderr.\n", argv[i]);
     }
-    printf("%s\n", boundary);
+    printf("%s\n", log_row_separator);
     terminate_assembler();
     fflush(stdout);
 
