@@ -1,8 +1,9 @@
 # MAMAN 14 - Base 32 Assembler
 
-Names:
-Daniel Maksimov - Madan64
-Inbar Shavit - SHINBA82
+Project by
+----------
+- Daniel Maksimov - Madan64
+- Inbar Shavit - SHINBA82
 
 Submission Date: 14\8\2022
 
@@ -48,15 +49,15 @@ We implemented a vector (dynamic array) and hash_table data structures.
 - `struct hash_table`.
 - `struct pair`.
 
-assembler.h
-- `enum ARE`: bits 0-1. e.g. ABSOLUTE.
+`assembler.h`
+- `enum ARE`: bits 0-1. e.g. `ABSOLUTE`.
 - `enum addressing_mode`: bits 2-3, 4-5. e.g. REGISTER.
-- `enum datatype` (directive types). e.g. STRING.
+- `enum datatype` (directive types). e.g. `STRING`.
 - `struct command_field` (pg. 17) bitfield for a 10-bit instruction.
 - `struct additional_word_field` (pg. 19): `ARE`+`data` a 10-bit additional word.
 - `operand_encoder` a pointer to a function that takes a token and returns a `command_field`.
 - `union command` `command_field` or `int`, used to represent command as `int` in instruction array.
-- `enum symbol_type` (DATA\CODE).
+- `enum symbol_type` (`DATA`/`CODE`).
 - `struct symbol`: line-address + symbol_type.
 
 
