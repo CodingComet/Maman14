@@ -227,7 +227,7 @@ unsigned int get_additional_wordc(addressing_mode mode)
 
 void check_too_many_args()
 {
-    char* rest = strtok(NULL, delim);
+    char *rest = strtok(NULL, delim);
     if (rest && rest[0] != ';')
         raise("Too many args");
 }
@@ -245,7 +245,7 @@ command_field nullary(char *token)
 
 command_field unary(char *token) /* Destination operand only. */
 {
-    if(!token)
+    if (!token)
         raise("Not enough args");
 
     command_field res;
@@ -271,7 +271,7 @@ command_field binary(char *token) /* Both operands. */
     res.source_operand = get_addressing_mode(token);
 
     L = (get_additional_wordc(res.destination_operand) + get_additional_wordc(res.source_operand)) -
-            (res.destination_operand == res.source_operand && res.destination_operand == REGISTER);
+        (res.destination_operand == res.source_operand && res.destination_operand == REGISTER);
 
     return res;
 }
@@ -304,7 +304,7 @@ void encode_string(char *token)
         }
     }
 
-    if (parenthesis!=2)
+    if (parenthesis != 2)
         raise("Invalid string defenition");
 
     vector_push_back(&data, 0); /* Null terminated string. */
@@ -312,17 +312,19 @@ void encode_string(char *token)
 }
 
 /* ASCII to integer wrapper: */
-int atoi_wrapper(char* str, int* res)
+#define INVALID_INT -1
+#define FLOAT_ERROR -2
+int atoi_with_error(char *str, int *res)
 {
     int val = atoi(str);
     if (!val && *str != '0') /* Invalid integer */
     {
-        *res = 1;
+        *res = INVALID_INT;
         return val;
     }
     if (atof(str) != val) /* Float error */
     {
-        *res = 2;
+        *res = FLOAT_ERROR;
         return val;
     }
 
@@ -333,10 +335,10 @@ int atoi_wrapper(char* str, int* res)
 void encode_data(char *token)
 {
     int res;
-    int val = atoi_wrapper(token, &res);
-    if (res == 1)
+    int val = atoi_with_error(token, &res);
+    if (INVALID_INT == res)
         raise("Invalid data(int) definition");
-    else if (res == 2)
+    else if (FLOAT_ERROR == res)
         raise("No support for floating-point numbers");
     vector_push_back(&data, val); /* Push parsed token(integer) to data. */
     ++DC;
@@ -436,7 +438,7 @@ char *begin_assembler(char *file_name)
 
     in_file = file_name;
 
-    /* Store(and return) output file name. */
+    /* Store (and return) output file name. */
     outfile = replace_file_extension(file_name, "ob");
 
     /* 1. */ DC = 0;
@@ -457,16 +459,19 @@ void assembler_parse(const char *line, char *line_copy, char *token)
 {
     LC++;
 
-    if (token == NULL) /* Empty. */
+    if (!token) /* Empty. */
         return;
-    if (token[0] == ';')
+
+    if (';' == token[0])
         return;
 
     L = 0;
     pair *p;
     symbol s;
     command c;
-    unsigned int i = 0xdeadbeef; /* Place holder for addresses. */
+    int i = 0;
+    unsigned int deadbeef = 0xdeadbeef; /* Place holder for addresses. */
+    unsigned int* address_placeholder = &deadbeef;
     bool symbol_flag = false;
     char symbol_name[MAX_SYMBOL_LENGTH];
     size_t length = strlen(token);
@@ -481,7 +486,7 @@ void assembler_parse(const char *line, char *line_copy, char *token)
         /* Copy data into symbol name. */
         symbol_name[length - 1] = '\0';
         memcpy(symbol_name, token, length - 1);
-    
+
         token = strtok(NULL, delim);
         if (table_get(&symbol_table, symbol_name))
             raise("Symbol already defined");
@@ -494,13 +499,13 @@ void assembler_parse(const char *line, char *line_copy, char *token)
             token = strtok(NULL, delim);
             if (table_get(&entries, token))
                 raise("Entry already defined");
-            table_insert(&entries, token, &i, sizeof(int));
+            table_insert(&entries, token, address_placeholder, sizeof(unsigned));
             break; /* .entry */
         case 4:
             token = strtok(NULL, delim);
             if (table_get(&externs, token))
                 raise("Extern already defined");
-            table_insert(&externs, token, &i, sizeof(int));
+            table_insert(&externs, token, address_placeholder, sizeof(unsigned));
             break; /* .extern */
         default:   /* .data, .string, .struct */
             s.ptr = DC;
@@ -527,12 +532,12 @@ void assembler_parse(const char *line, char *line_copy, char *token)
         raise("Command doesn't exist");
         return;
     }
-    
+
     c.command_binary = parse_command(*(int *)p->value, token);
-    
+
     vector_push_back(&instructions, c.command_decimal);
     for (i = 0; i < L; i++)                      /* Insert additional words as placeholders. */
-        vector_push_back(&instructions, 0xC0DE); /* 0xC0DE is hexadecimal placeholder for operands.*/
+        vector_push_back(&instructions, 0xC0DE); /* 0xC0DE is hexadecimal unused placeholder for operands.*/
 }
 
 void end_first_pass()
@@ -552,7 +557,7 @@ void end_first_pass()
         s->ptr += MEMORY_START;          /* Start memory at 100. */
     }
 
-    if(instructions.size + data.size > 155)
+    if (instructions.size + data.size > 155)
         raise("Memory limit exceeded");
 
     IC = 0;
@@ -577,7 +582,7 @@ void parse_operand(char *token, int mode, int IC)
 
     case IMMEDIATE:
         w.word_binary.ARE = ABSOLUTE;
-        val = atoi_wrapper(token+1, &res);
+        val = atoi_with_error(token + 1, &res);
         if (res)
             raise("Invalid immediate");
         w.word_binary.data = val; /* Get number after #. */
@@ -594,7 +599,7 @@ void parse_operand(char *token, int mode, int IC)
         }
         else
         {
-            if ((p = table_get(&externs, token)))                     /* Check if symbol is external. */
+            if ((p = table_get(&externs, token)))                   /* Check if symbol is external. */
                 table_insert(&externs, token, &IC, sizeof(size_t)); /* Save symbol usage. */
             w.word_binary.ARE = EXTERNAL;
             w.word_binary.data = 0;
@@ -616,6 +621,7 @@ void parse_operand(char *token, int mode, int IC)
 
         if ((p = table_get(&symbol_table, symbol_name))) /* Check if token is a defined symbol. */
         {
+            /* Token exists storing it as RELOCATABLE. */
             w.word_binary.ARE = RELOCATABLE;
             w.word_binary.data = (*(symbol *)p->value).ptr;
         }
@@ -627,12 +633,11 @@ void parse_operand(char *token, int mode, int IC)
             w.word_binary.data = 0;
         }
 
-
         instructions.data[IC] = w.word_decimal;
 
         /* Index */
         w.word_binary.ARE = ABSOLUTE;
-        val = atoi_wrapper(dot + 1, &res);
+        val = atoi_with_error(dot + 1, &res);
         if (res)
             raise("Invalid index");
         else if (val < 1 || val > 2)
