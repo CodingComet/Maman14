@@ -18,11 +18,11 @@ int main(int argc, char *argv[])
     for (i = 1; i < argc; i++)
     {
         printf("%s\n", log_row_separator);
-        printf("Processing file %s, %d\\%d...\n", argv[i], i, argc - 1);
+        printf("Processing file %d/%d `%s`...\n", i, argc - 1, argv[i]);
         if (!process_file(argv[i]))
             continue;
 
-        printf("Failed to assemble file %s, See more in stderr.\n", argv[i]);
+        printf("Failed to assemble file `%s`, See more in stderr.\n", argv[i]);
     }
     printf("%s\n", log_row_separator);
     terminate_assembler();

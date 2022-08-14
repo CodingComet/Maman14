@@ -73,7 +73,7 @@ void preprocessor_parse(const char *line, char *line_copy, char *token)
 
 void end_preprocessor()
 {
-    printf("Generated file %s.\n", outfile);
+    printf("Generated file `%s`.\n", outfile);
     fclose(fp);
     free_table(&macro_table);
 }

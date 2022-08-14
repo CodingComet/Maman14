@@ -735,12 +735,12 @@ void end_assembler()
         char *ext_file = generate_ext(in_file);
 
         generate_ob(outfile);
-        printf("Generated file %s.\n", outfile);
+        printf("Generated file `%s`.\n", outfile);
 
         if (ent_file)
-            printf("Generated file %s.\n", ent_file);
+            printf("Generated file `%s`.\n", ent_file);
         if (ext_file)
-            printf("Generated file %s.\n", ext_file);
+            printf("Generated file `%s`.\n", ext_file);
 
         free(ent_file);
         free(ext_file);
