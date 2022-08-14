@@ -258,22 +258,23 @@ command_field unary(char *token) /* Destination operand only. */
 
 command_field binary(char *token) /* Both operands. */
 {
-    command_field res;
+    command res;
+    res.command_decimal = 0;
 
     char *dest = strtok(NULL, delim);
     if (!token || !dest)
     {
         raise("Not enough args");
-        return res;
+        return res.command_binary;
     }
 
-    res.destination_operand = get_addressing_mode(dest);
-    res.source_operand = get_addressing_mode(token);
+    res.command_binary.destination_operand = get_addressing_mode(dest);
+    res.command_binary.source_operand = get_addressing_mode(token);
 
-    L = (get_additional_wordc(res.destination_operand) + get_additional_wordc(res.source_operand)) -
-        (res.destination_operand == res.source_operand && res.destination_operand == REGISTER);
+    L = (get_additional_wordc(res.command_binary.destination_operand) + get_additional_wordc(res.command_binary.source_operand)) -
+        (res.command_binary.destination_operand == res.command_binary.source_operand && res.command_binary.destination_operand == REGISTER);
 
-    return res;
+    return res.command_binary;
 }
 
 void encode_string(char *token)
