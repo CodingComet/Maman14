@@ -258,11 +258,15 @@ command_field unary(char *token) /* Destination operand only. */
 
 command_field binary(char *token) /* Both operands. */
 {
-    char* dest = strtok(NULL, delim);
-    if(!token || !dest)
-        raise("Not enough args");
-
     command_field res;
+
+    char *dest = strtok(NULL, delim);
+    if (!token || !dest)
+    {
+        raise("Not enough args");
+        return res;
+    }
+
     res.destination_operand = get_addressing_mode(dest);
     res.source_operand = get_addressing_mode(token);
 
