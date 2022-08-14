@@ -1,11 +1,15 @@
+# MAMAN 14 - Base 32 Assembler
+
 Names:
 Daniel Maksimov - Madan64
 Inbar Shavit - SHINBA82
 
 Submission Date: 14\8\2022
 
-Introdution
-===========
+
+
+Introduction
+============
 
 The purpose of the project is to process an assembly (.as) files for an imaginary processor.
 Given an assembly file the program will generate the following files (Machine code):
@@ -17,25 +21,24 @@ Given an assembly file the program will generate the following files (Machine co
 Workflow
 ========
 The workflow consists of 3 stages: 
-I.   Preprocessor - macro handling.
-II.  Assembler pass 1 - encodes data and handles symbol definitions.
-III. Assembler pass 2 - encodes instructions, operands and generates output files.
+   1. Preprocessor - macro handling.
+   2. Assembler pass 1 - encodes data and handles symbol definitions.
+   3. Assembler pass 2 - encodes instructions, operands and generates output files.
 
-Stage I: Preprocessor
+Stage 1: Preprocessor
 ---------------------
+Assembly `.as` files are parsed and a resulting `.am` file is generated.  
 
+Stage 2: Assembler Pass 1
+-------------------------
+Preprocessesed assembly `.am` files are parsed. 
+A data image, and an instruction array are generated.
 
-The assembly .as file goes through `process_file()` which calls
-the Preprocessor(preprocessor.*) for macro handling. The result is an .am file.
-
-    -> parse_file example.am
-    -> assembler
-    Returns example.ob.
-
-    If previous step is successful:
-    -> parse_file example.am
-    -> second pass (secondary_assembler_parse)
-    Creates output files.
+Stage 2: Assembler Pass 2
+-------------------------
+Preprocessesed assembly `.am` files are parsed(again).
+The instructions are being processed using the instructions array generated in the first pass.
+If used `.ext`, `.ent` files will be generated. A `.ob` file will be generated using the instructions array with an appended and offset data image.
 
 
 Data Types
@@ -56,22 +59,25 @@ assembler.h
 - `enum symbol_type` (DATA\CODE).
 - `struct symbol`: line-address + symbol_type.
 
-Files:
-- hash_table.* 
-- vector.*
-- parser.* Parses and validates input files.
-- preprocessor.*:
-    preprocessor_parse(): Macro handling
-- assembler.*: 
-    assembler_parse(): First pass
-    secondary_assembler_parse(): Second pass
-- main.c: Iterates over files from argv and assembles them.
+
+Files
+=====
+- `hash_table.* `
+- `vector.*`
+- `parser.*` Parses and validates input files.
+- `preprocessor.*`:
+    `preprocessor_parse()`: Macro handling
+- `assembler.*`: 
+    `assembler_parse()`: First pass
+    `secondary_assembler_parse()`: Second pass
+- `main.c`: Iterates over files from argv and assembles them.
 
 Errors
 ======
 All errors are printed to stderr.
 
-parser.c: 
+`parser.c`: 
+
     parse_file():
         - "Can't open file"
           Failed opening input file skiping to next file.
@@ -81,7 +87,8 @@ If an error is encountered in the first pass it will be reported and the second 
 
 Possible errors
 ---------------
-assembler.c: 
+`assembler.c`: 
+
     parse_command():
         - "Too many args"
         - "Not enough args"
@@ -104,6 +111,7 @@ assembler.c:
 
 Second pass:
 If an error is encountered in the second pass it will be reported and no files will be generated.
+
     parse_operand():
         - "Invalid immediate"
         - "Invalid index"
@@ -118,5 +126,5 @@ Makefile
 Helpful flags to supress redundant warnings.
 - Wno-format: printing size_t using %zu.
 - Wno-incompatible-pointer-types: Need to cast some pointers. 
-- Wno-unused-variable: variables defined in .h file and used in .c files.
-- Wno-declaration-after-statement: define variable in declaration(int i = 0).
+- Wno-unused-variable: variables defined in `.h` file and used in `.c` files.
+- Wno-declaration-after-statement: define variable in declaration(`int i = 0`).
